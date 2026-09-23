@@ -1,0 +1,119 @@
+name: Build APK
+
+# 저장소에 코드를 올리면 자동으로 빌드. Actions 탭 → Build APK → Run workflow 로 수동 실행도 가능.
+# 저장소 루트에 TsukuruBox.zip 만 올려도 동작 (압축을 풀어서 빌드).
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      with_mkxp:
+        description: "mkxp-z 포함 (실험적)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 디스크 공간 확보
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
+      - name: 프로젝트 위치 찾기
+        run: |
+          if [ -f TsukuruBox.zip ]; then
+            unzip -q TsukuruBox.zip -d "$RUNNER_TEMP/src"
+            echo "PROJ=$RUNNER_TEMP/src/TsukuruBox" >> "$GITHUB_ENV"
+          elif [ -f TsukuruBox/build.sh ]; then
+            echo "PROJ=$GITHUB_WORKSPACE/TsukuruBox" >> "$GITHUB_ENV"
+          else
+            echo "PROJ=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
+          echo "MKXP_FLAG=${{ inputs.with_mkxp && '--with-mkxp' || '' }}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 빌드 도구 설치
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq git curl unzip zip xz-utils python3 cmake make autoconf automake libtool \
+            pkg-config patch perl meson ninja-build build-essential wget ruby bison xxd gettext >/dev/null
+
+      - name: 엔진 소스 받기
+        working-directory: ${{ env.PROJ }}
+        run: python3 tools/integrate.py $MKXP_FLAG
+
+      - name: 툴체인 캐시 불러오기
+        id: tc
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.PROJ }}/third_party/buildscripts/android/android-sdk
+            ${{ env.PROJ }}/third_party/buildscripts/android/arm64-v8a-toolchain
+          key: easyrpg-toolchain-84cf2f4-ndk29-v1
+
+      - name: Android SDK / EasyRPG 툴체인 준비 (첫 빌드 1시간 이상)
+        working-directory: ${{ env.PROJ }}
+        env:
+          TSUKURU_STOP_AFTER_TOOLCHAIN: "1"
+        run: ./build.sh $MKXP_FLAG 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+
+      - name: 툴체인 캐시 저장
+        if: steps.tc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.PROJ }}/third_party/buildscripts/android/android-sdk
+            ${{ env.PROJ }}/third_party/buildscripts/android/arm64-v8a-toolchain
+          key: easyrpg-toolchain-84cf2f4-ndk29-v1
+
+      - name: APK 빌드
+        working-directory: ${{ env.PROJ }}
+        run: ./build.sh $MKXP_FLAG 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+
+      - name: APK 업로드 (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TsukuruBox-apk
+          path: ${{ env.PROJ }}/dist/TsukuruBox.apk
+
+      - name: 릴리스로 게시 (폰에서 바로 다운로드)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" "$PROJ/dist/TsukuruBox.apk" \
+            --repo "${{ github.repository }}" \
+            --title "쯔꾸르박스 빌드 #${{ github.run_number }}" \
+            --notes "설치 전 Winlator Cmod/Ludashi(com.winlator.cmod)가 있으면 삭제하세요."
+
+      - name: 실패 로그 요약
+        if: failure()
+        run: |
+          echo "===== 마지막 60줄 (이 부분을 복사해서 보내 주세요) ====="
+          tail -n 60 "$RUNNER_TEMP/build.log" 2>/dev/null || true
+
+      - name: 실패 로그 업로드
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ${{ runner.temp }}/build.log
