@@ -56,7 +56,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq git curl unzip zip xz-utils python3 cmake make autoconf automake libtool \
-            pkg-config patch perl meson ninja-build build-essential wget ruby bison xxd gettext >/dev/null
+            pkg-config patch perl meson ninja-build build-essential wget ruby bison xxd gettext glslang-tools zstd >/dev/null
 
       - name: 엔진 소스 받기
         working-directory: ${{ env.PROJ }}
@@ -108,8 +108,16 @@ jobs:
       - name: 실패 로그 요약
         if: failure()
         run: |
-          echo "===== 마지막 60줄 (이 부분을 복사해서 보내 주세요) ====="
-          grep -avE '^\[[= ]*\] +[0-9]+%|^ +$' "$RUNNER_TEMP/build.log" 2>/dev/null | tail -n 60 || true
+          L="$RUNNER_TEMP/build.log"
+          echo "===== 오류 부분 (이 전체를 복사해서 보내 주세요) ====="
+          grep -anE "CMake Error|error:|FAILED|What went wrong|Execution failed|오류|fatal error" "$L" 2>/dev/null \
+            | grep -v "^[0-9]*:\s*at " | head -n 40 || true
+          echo "===== Gradle 실패 작업 ====="
+          grep -aA8 "What went wrong" "$L" 2>/dev/null | grep -v "^\s*at " | head -n 60 || true
+          echo "===== CMake 오류 상세 ====="
+          grep -aA12 "CMake Error" "$L" 2>/dev/null | head -n 40 || true
+          echo "===== 마지막 25줄 ====="
+          grep -avE '^\[[= ]*\] +[0-9]+%|^ +$|^\s+at ' "$L" 2>/dev/null | tail -n 25 || true
 
       - name: 실패 로그 업로드
         if: failure()
