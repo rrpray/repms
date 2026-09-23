@@ -67,9 +67,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            ${{ env.PROJ }}/third_party/buildscripts/android/android-sdk
-            ${{ env.PROJ }}/third_party/buildscripts/android/arm64-v8a-toolchain
-          key: easyrpg-toolchain-84cf2f4-ndk29-v1
+            ${{ env.PROJ }}/deps/buildscripts/android/android-sdk
+            ${{ env.PROJ }}/deps/buildscripts/android/arm64-v8a-toolchain
+          key: easyrpg-toolchain-84cf2f4-ndk29-v2
 
       - name: Android SDK / EasyRPG 툴체인 준비 (첫 빌드 1시간 이상)
         working-directory: ${{ env.PROJ }}
@@ -82,9 +82,9 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            ${{ env.PROJ }}/third_party/buildscripts/android/android-sdk
-            ${{ env.PROJ }}/third_party/buildscripts/android/arm64-v8a-toolchain
-          key: easyrpg-toolchain-84cf2f4-ndk29-v1
+            ${{ env.PROJ }}/deps/buildscripts/android/android-sdk
+            ${{ env.PROJ }}/deps/buildscripts/android/arm64-v8a-toolchain
+          key: easyrpg-toolchain-84cf2f4-ndk29-v2
 
       - name: APK 빌드
         working-directory: ${{ env.PROJ }}
